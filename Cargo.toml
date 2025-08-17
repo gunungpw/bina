@@ -1,0 +1,20 @@
+[package]
+name = "bina"
+authors = ["Dave Rolsky <autarch@urth.org>"]
+license = "MIT"
+readme = "README.md"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.45", features = ["derive"] }
+comfy-table = "7.1.4"
+regex = "1.11.1"
+reqwest = { version = "0.12.23", features = ["blocking", "json"] }
+serde_json = "1.0.142"
+tokio = { version = "1.47.1", features = ["full"] }
+ubi = "0.7.3"
+
+[profile.release]
+strip = true
+lto = true
