@@ -1,6 +1,6 @@
 [package]
 name = "bina"
-authors = ["Dave Rolsky <autarch@urth.org>"]
+authors = ["Gunung Pambudi Wibisono <gunungpambudiw@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 version = "0.1.0"
