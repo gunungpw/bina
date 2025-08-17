@@ -25,8 +25,8 @@
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/<your-username>/binary_manager.git
-   cd binary_manager
+   git clone https://github.com/gunungpw/bina.git
+   cd bina
    ```
 
 2. **Set Environment Variable**:
