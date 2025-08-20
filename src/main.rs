@@ -12,17 +12,25 @@ use ubi::UbiBuilder;
 
 // CLI structure using clap
 #[derive(Parser)]
-#[command(name = "binary_manager")]
+#[command(name = "bina")]
 #[command(about = "Manages binary installations in XDG_BIN_HOME", long_about = None)]
+#[command(version = "0.1.0")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
+    /// Display version information
+    #[arg(long, global = true)]
+    version: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Checks availability of binaries in XDG_BIN_HOME
-    Check,
+    Check {
+        /// Check the latest release version from GitHub
+        #[arg(long)]
+        latest: bool,
+    },
     /// Downloads a specified binary using ubi
     Get {
         /// The name of the binary to download
@@ -147,7 +155,10 @@ async fn binary_get(
 }
 
 // Checks availability of binaries in XDG_BIN_HOME
-async fn binary_check(data: &HashMap<String, [String; 3]>) -> Vec<HashMap<String, String>> {
+async fn binary_check(
+    data: &HashMap<String, [String; 3]>,
+    check_latest: bool,
+) -> Vec<HashMap<String, String>> {
     if !ensure_bin_directory() {
         return vec![];
     }
@@ -179,23 +190,27 @@ async fn binary_check(data: &HashMap<String, [String; 3]>) -> Vec<HashMap<String
                 .captures(&version_output)
                 .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
                 .unwrap_or("-".to_string());
-            let latest = check_latest_release(&bin_data[0]).await;
-            let latest_version = re
-                .captures(&latest)
-                .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-                .unwrap_or("-".to_string());
             result.insert("Status".to_string(), "Found".to_string());
             result.insert("Version".to_string(), version);
-            result.insert("Latest".to_string(), latest_version);
+            if check_latest {
+                let latest = check_latest_release(&bin_data[0]).await;
+                let latest_version = re
+                    .captures(&latest)
+                    .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                    .unwrap_or("-".to_string());
+                result.insert("Latest".to_string(), latest_version);
+            }
         } else {
-            let latest = check_latest_release(&bin_data[0]).await;
-            let latest_version = re
-                .captures(&latest)
-                .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-                .unwrap_or("-".to_string());
             result.insert("Status".to_string(), "Not Found".to_string());
             result.insert("Version".to_string(), "-".to_string());
-            result.insert("Latest".to_string(), latest_version);
+            if check_latest {
+                let latest = check_latest_release(&bin_data[0]).await;
+                let latest_version = re
+                    .captures(&latest)
+                    .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                    .unwrap_or("-".to_string());
+                result.insert("Latest".to_string(), latest_version);
+            }
         }
         results.push(result);
     }
@@ -243,21 +258,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let data = get_data();
 
+    // Handle --version flag
+    if cli.version {
+        println!("bina {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     match cli.command {
-        Commands::Check => {
-            let results = binary_check(&data).await;
+        Some(Commands::Check { latest }) => {
+            let results = binary_check(&data, latest).await;
 
             // Calculate maximum width for each column
             let mut max_binary = "Binary".len();
             let mut max_status = "Status".len();
             let mut max_version = "Version".len();
-            let mut max_latest = "Latest".len();
+            let mut max_latest = if latest { "Latest".len() } else { 0 };
 
             for result in &results {
                 max_binary = max_binary.max(result["Binary"].len());
                 max_status = max_status.max(result["Status"].len());
                 max_version = max_version.max(result["Version"].len());
-                max_latest = max_latest.max(result["Latest"].len());
+                if latest {
+                    max_latest = max_latest.max(result.get("Latest").map(|s| s.len()).unwrap_or(0));
+                }
             }
 
             // Function to calculate visible string length (excluding ANSI codes)
@@ -267,17 +290,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Print header
-            println!(
-                "{:<width1$} {:<width2$} {:<width3$} {:<width4$}",
-                "Binary",
-                "Status",
-                "Version",
-                "Latest",
-                width1 = max_binary,
-                width2 = max_status,
-                width3 = max_version,
-                width4 = max_latest
-            );
+            if latest {
+                println!(
+                    "{:<width1$} {:<width2$} {:<width3$} {:<width4$}",
+                    "Binary",
+                    "Status",
+                    "Version",
+                    "Latest",
+                    width1 = max_binary,
+                    width2 = max_status,
+                    width3 = max_version,
+                    width4 = max_latest
+                );
+            } else {
+                println!(
+                    "{:<width1$} {:<width2$} {:<width3$}",
+                    "Binary",
+                    "Status",
+                    "Version",
+                    width1 = max_binary,
+                    width2 = max_status,
+                    width3 = max_version
+                );
+            }
 
             // Print rows
             for result in results {
@@ -291,27 +326,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let visible_status_len = visible_length(&status_display);
                 let status_padding = max_status.saturating_sub(visible_status_len);
 
-                println!(
-                    "{:<width1$}{:<width2$}{:<width3$}{:<width4$}",
-                    result["Binary"].as_str(),
-                    format!("{}{}", status_display, " ".repeat(status_padding)),
-                    result["Version"].as_str(),
-                    result["Latest"].as_str(),
-                    width1 = max_binary,
-                    width2 = max_status,
-                    width3 = max_version,
-                    width4 = max_latest
-                );
+                if latest {
+                    println!(
+                        "{:<width1$}{:<width2$}{:<width3$}{:<width4$}",
+                        result["Binary"].as_str(),
+                        format!("{}{}", status_display, " ".repeat(status_padding)),
+                        result["Version"].as_str(),
+                        result.get("Latest").map(|s| s.as_str()).unwrap_or("-"),
+                        width1 = max_binary,
+                        width2 = max_status,
+                        width3 = max_version,
+                        width4 = max_latest
+                    );
+                } else {
+                    println!(
+                        "{:<width1$}{:<width2$}{:<width3$}",
+                        result["Binary"].as_str(),
+                        format!("{}{}", status_display, " ".repeat(status_padding)),
+                        result["Version"].as_str(),
+                        width1 = max_binary,
+                        width2 = max_status,
+                        width3 = max_version
+                    );
+                }
             }
         }
-        Commands::Get { bin_name } => {
+        Some(Commands::Get { bin_name }) => {
             binary_get(&bin_name, &data).await?;
         }
-        Commands::GetMissing => {
+        Some(Commands::GetMissing) => {
             let missing_result = binary_get_missing(&data).await?;
             if !missing_result.is_empty() {
                 println!("{}", missing_result);
             }
+        }
+        None => {
+            // If no subcommand is provided and --version is not set, print help
+            Cli::parse_from(&["bina", "--help"]);
         }
     }
     Ok(())
