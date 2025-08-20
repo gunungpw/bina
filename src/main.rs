@@ -3,6 +3,7 @@ use comfy_table::presets::UTF8_FULL_CONDENSED;
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 use regex::Regex;
 use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
@@ -33,20 +34,42 @@ enum Commands {
     GetMissing,
 }
 
-// Define the data mapping for binaries
-fn get_data() -> HashMap<&'static str, [&'static str; 3]> {
+// Structure to represent a binary entry in the TOML file
+#[derive(Debug, Serialize, Deserialize)]
+struct Binary {
+    name: String,
+    repo: String,
+    exe: String,
+    #[serde(rename = "version_arg")]
+    version_arg: String,
+}
+
+// Structure to represent the TOML file content
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    binaries: Vec<Binary>,
+}
+
+// Define the data mapping for binaries from TOML file
+fn get_data() -> HashMap<String, [String; 3]> {
+    let config_dir = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
+        let home = env::var("HOME").expect("HOME environment variable not set");
+        format!("{}/.config", home)
+    });
+    let toml_path = format!("{}/bina/binaries.toml", config_dir);
+
+    let toml_str = fs::read_to_string(&toml_path)
+        .expect(&format!("Failed to read binaries.toml from {}", toml_path));
+    let config: Config = toml::from_str(&toml_str)
+        .expect(&format!("Failed to parse binaries.toml from {}", toml_path));
+
     let mut data = HashMap::new();
-    data.insert("nu", ["nushell/nushell", "nu", "--version"]);
-    data.insert("uv", ["astral-sh/uv", "uv", "--version"]);
-    data.insert("zoxide", ["ajeetdsouza/zoxide", "zoxide", "--version"]);
-    data.insert("bun", ["oven-sh/bun", "bun", "--version"]);
-    data.insert("jj", ["jj-vcs/jj", "jj", "--version"]);
-    data.insert("fzf", ["junegunn/fzf", "fzf", "--version"]);
-    data.insert("ubi", ["houseabsolute/ubi", "ubi", "--version"]);
-    data.insert("gh", ["cli/cli", "gh", "--version"]);
-    data.insert("yazi", ["sxyazi/yazi", "yazi", "--version"]);
-    data.insert("micro", ["zyedidia/micro", "micro", "--version"]);
-    data.insert("lazygit", ["jesseduffield/lazygit", "lazygit", "--version"]);
+    for binary in config.binaries {
+        data.insert(
+            binary.name.clone(),
+            [binary.repo, binary.exe, binary.version_arg],
+        );
+    }
     data
 }
 
@@ -65,7 +88,7 @@ fn ensure_bin_directory() -> bool {
             Ok(_) => true,
             Err(_) => {
                 println!("Failed to create directory {}", bin_directory);
-                false
+                return false;
             }
         }
     } else {
@@ -100,7 +123,7 @@ fn check_latest_release(repo: &str) -> String {
 // Downloads a specified binary using ubi
 async fn binary_get(
     bin_name: &str,
-    data: &HashMap<&str, [&str; 3]>,
+    data: &HashMap<String, [String; 3]>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !ensure_bin_directory() {
         return Err("Failed to ensure bin directory".into());
@@ -116,9 +139,9 @@ async fn binary_get(
     let xdg_bin_home = env::var("XDG_BIN_HOME").expect("XDG_BIN_HOME not set");
 
     let mut ubi = UbiBuilder::new()
-        .project(bin_data[0])
+        .project(&bin_data[0])
         .install_dir(&xdg_bin_home)
-        .exe(bin_data[1])
+        .exe(&bin_data[1])
         .build()?;
 
     ubi.install_binary().await?;
@@ -127,7 +150,7 @@ async fn binary_get(
 }
 
 // Checks availability of binaries in XDG_BIN_HOME
-fn binary_check(data: &HashMap<&str, [&str; 3]>) -> Vec<HashMap<String, String>> {
+fn binary_check(data: &HashMap<String, [String; 3]>) -> Vec<HashMap<String, String>> {
     if !ensure_bin_directory() {
         return vec![];
     }
@@ -151,7 +174,7 @@ fn binary_check(data: &HashMap<&str, [&str; 3]>) -> Vec<HashMap<String, String>>
 
         if binaries.contains(&bin_name.to_string()) {
             let output = Command::new(bin_name)
-                .arg(bin_data[2])
+                .arg(&bin_data[2])
                 .output()
                 .expect("Failed to execute binary");
             let version_output = String::from_utf8_lossy(&output.stdout);
@@ -159,12 +182,12 @@ fn binary_check(data: &HashMap<&str, [&str; 3]>) -> Vec<HashMap<String, String>>
                 .captures(&version_output)
                 .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
                 .unwrap_or("-".to_string());
-            let latest = tokio::task::block_in_place(|| check_latest_release(bin_data[0]));
+            let latest = tokio::task::block_in_place(|| check_latest_release(&bin_data[0]));
             result.insert("Status".to_string(), "Found".to_string());
             result.insert("Version".to_string(), version);
             result.insert("Latest".to_string(), latest);
         } else {
-            let latest = tokio::task::block_in_place(|| check_latest_release(bin_data[0]));
+            let latest = tokio::task::block_in_place(|| check_latest_release(&bin_data[0]));
             result.insert("Status".to_string(), "Not Found".to_string());
             result.insert("Version".to_string(), "-".to_string());
             result.insert("Latest".to_string(), latest);
@@ -176,7 +199,7 @@ fn binary_check(data: &HashMap<&str, [&str; 3]>) -> Vec<HashMap<String, String>>
 
 // Downloads missing binaries and returns their status
 async fn binary_get_missing(
-    data: &HashMap<&str, [&str; 3]>,
+    data: &HashMap<String, [String; 3]>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if !ensure_bin_directory() {
         return Ok("".to_string());
@@ -192,10 +215,10 @@ async fn binary_get_missing(
         })
         .collect();
 
-    let not_found: Vec<&str> = data
+    let not_found: Vec<String> = data
         .keys()
-        .filter(|&bin_name| !binaries.contains(&bin_name.to_string()))
-        .copied()
+        .filter(|bin_name| !binaries.contains(bin_name))
+        .cloned()
         .collect();
 
     if not_found.is_empty() {
@@ -204,7 +227,7 @@ async fn binary_get_missing(
 
     for bin_name in not_found {
         println!("Downloading {}...", bin_name);
-        binary_get(bin_name, data).await?;
+        binary_get(&bin_name, data).await?;
     }
 
     Ok("".to_string())
