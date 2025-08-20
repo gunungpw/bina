@@ -1,8 +1,6 @@
 use clap::{Parser, Subcommand};
-use comfy_table::presets::UTF8_FULL_CONDENSED;
-use comfy_table::{Cell, Color, ContentArrangement, Table};
 use regex::Regex;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -40,7 +38,6 @@ struct Binary {
     name: String,
     repo: String,
     exe: String,
-    #[serde(rename = "version_arg")]
     version_arg: String,
 }
 
@@ -96,8 +93,8 @@ fn ensure_bin_directory() -> bool {
     }
 }
 
-// Checks the latest release version for a GitHub repository
-fn check_latest_release(repo: &str) -> String {
+// Checks the latest release version for a GitHub repository asynchronously
+async fn check_latest_release(repo: &str) -> String {
     let client = Client::new();
     let url = format!("https://api.github.com/repos/{}/releases/latest", repo);
     match client
@@ -105,10 +102,11 @@ fn check_latest_release(repo: &str) -> String {
         .header("Accept", "application/vnd.github.v3+json")
         .header("User-Agent", "reqwest")
         .send()
+        .await
     {
         Ok(response) => {
             if response.status().is_success() {
-                match response.json::<Value>() {
+                match response.json::<Value>().await {
                     Ok(json) => json["tag_name"].as_str().unwrap_or("Error").to_string(),
                     Err(_) => "Error".to_string(),
                 }
@@ -132,7 +130,6 @@ async fn binary_get(
     let bin_data = match data.get(bin_name) {
         Some(data) => data,
         None => {
-            println!("Error: Binary '{}' not found in data", bin_name);
             return Err(format!("Binary '{}' not found in data", bin_name).into());
         }
     };
@@ -150,7 +147,7 @@ async fn binary_get(
 }
 
 // Checks availability of binaries in XDG_BIN_HOME
-fn binary_check(data: &HashMap<String, [String; 3]>) -> Vec<HashMap<String, String>> {
+async fn binary_check(data: &HashMap<String, [String; 3]>) -> Vec<HashMap<String, String>> {
     if !ensure_bin_directory() {
         return vec![];
     }
@@ -182,15 +179,23 @@ fn binary_check(data: &HashMap<String, [String; 3]>) -> Vec<HashMap<String, Stri
                 .captures(&version_output)
                 .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
                 .unwrap_or("-".to_string());
-            let latest = tokio::task::block_in_place(|| check_latest_release(&bin_data[0]));
+            let latest = check_latest_release(&bin_data[0]).await;
+            let latest_version = re
+                .captures(&latest)
+                .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .unwrap_or("-".to_string());
             result.insert("Status".to_string(), "Found".to_string());
             result.insert("Version".to_string(), version);
-            result.insert("Latest".to_string(), latest);
+            result.insert("Latest".to_string(), latest_version);
         } else {
-            let latest = tokio::task::block_in_place(|| check_latest_release(&bin_data[0]));
+            let latest = check_latest_release(&bin_data[0]).await;
+            let latest_version = re
+                .captures(&latest)
+                .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+                .unwrap_or("-".to_string());
             result.insert("Status".to_string(), "Not Found".to_string());
             result.insert("Version".to_string(), "-".to_string());
-            result.insert("Latest".to_string(), latest);
+            result.insert("Latest".to_string(), latest_version);
         }
         results.push(result);
     }
@@ -240,27 +245,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Check => {
-            let results = binary_check(&data);
-            let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL_CONDENSED)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_header(vec!["Binary", "Status", "Version", "Latest"]);
+            let results = binary_check(&data).await;
+
+            // Calculate maximum width for each column
+            let mut max_binary = "Binary".len();
+            let mut max_status = "Status".len();
+            let mut max_version = "Version".len();
+            let mut max_latest = "Latest".len();
+
+            for result in &results {
+                max_binary = max_binary.max(result["Binary"].len());
+                max_status = max_status.max(result["Status"].len());
+                max_version = max_version.max(result["Version"].len());
+                max_latest = max_latest.max(result["Latest"].len());
+            }
+
+            // Function to calculate visible string length (excluding ANSI codes)
+            fn visible_length(s: &str) -> usize {
+                let ansi_regex = regex::Regex::new(r"\x1B\[[0-9;]*m").unwrap();
+                ansi_regex.replace_all(s, "").len()
+            }
+
+            // Print header
+            println!(
+                "{:<width1$} {:<width2$} {:<width3$} {:<width4$}",
+                "Binary",
+                "Status",
+                "Version",
+                "Latest",
+                width1 = max_binary,
+                width2 = max_status,
+                width3 = max_version,
+                width4 = max_latest
+            );
+
+            // Print rows
             for result in results {
                 let status = result["Status"].as_str();
-                let cell_color = if status.contains("Found") {
-                    Color::Green
+                let status_display = if status.contains("Found") {
+                    format!("\x1b[32m{}\x1b[0m", status) // Green color
                 } else {
-                    Color::Red
+                    format!("\x1b[31m{}\x1b[0m", status) // Red color
                 };
-                table.add_row(vec![
-                    Cell::new(&result["Binary"]),
-                    Cell::new(status).fg(cell_color),
-                    Cell::new(&result["Version"]),
-                    Cell::new(&result["Latest"]),
-                ]);
+                // Calculate padding for status column based on visible length
+                let visible_status_len = visible_length(&status_display);
+                let status_padding = max_status.saturating_sub(visible_status_len);
+
+                println!(
+                    "{:<width1$}{:<width2$}{:<width3$}{:<width4$}",
+                    result["Binary"].as_str(),
+                    format!("{}{}", status_display, " ".repeat(status_padding)),
+                    result["Version"].as_str(),
+                    result["Latest"].as_str(),
+                    width1 = max_binary,
+                    width2 = max_status,
+                    width3 = max_version,
+                    width4 = max_latest
+                );
             }
-            println!("{}", table);
         }
         Commands::Get { bin_name } => {
             binary_get(&bin_name, &data).await?;
