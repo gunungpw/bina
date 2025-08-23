@@ -18,9 +18,6 @@ use ubi::UbiBuilder;
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Display version information
-    #[arg(long, global = true)]
-    version: bool,
 }
 
 #[derive(Subcommand)]
@@ -257,12 +254,6 @@ async fn binary_get_missing(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let data = get_data();
-
-    // Handle --version flag
-    if cli.version {
-        println!("bina {}", env!("CARGO_PKG_VERSION"));
-        return Ok(());
-    }
 
     match cli.command {
         Some(Commands::Check { latest }) => {
