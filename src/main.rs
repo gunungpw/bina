@@ -170,7 +170,7 @@ async fn binary_check(
         })
         .collect();
 
-    let re = Regex::new(r"(\d+\.\d+\.\d+)").expect("Invalid regex");
+    let re: Regex = Regex::new(r"(\d+\.\d+\.\d+)").expect("Invalid regex");
 
     let mut results = vec![];
     for (bin_name, bin_data) in data {
@@ -187,7 +187,7 @@ async fn binary_check(
                 .captures(&version_output)
                 .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
                 .unwrap_or("-".to_string());
-            result.insert("Status".to_string(), "Found".to_string());
+            result.insert("Status".to_string(), "V".to_string());
             result.insert("Version".to_string(), version);
             if check_latest {
                 let latest = check_latest_release(&bin_data[0]).await;
@@ -198,7 +198,7 @@ async fn binary_check(
                 result.insert("Latest".to_string(), latest_version);
             }
         } else {
-            result.insert("Status".to_string(), "Not Found".to_string());
+            result.insert("Status".to_string(), "X".to_string());
             result.insert("Version".to_string(), "-".to_string());
             if check_latest {
                 let latest = check_latest_release(&bin_data[0]).await;
@@ -260,45 +260,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let results = binary_check(&data, latest).await;
 
             // Calculate maximum width for each column
-            let mut max_binary = "Binary".len();
-            let mut max_status = "Status".len();
-            let mut max_version = "Version".len();
-            let mut max_latest = if latest { "Latest".len() } else { 0 };
-
-            for result in &results {
-                max_binary = max_binary.max(result["Binary"].len());
-                max_status = max_status.max(result["Status"].len());
-                max_version = max_version.max(result["Version"].len());
-                if latest {
-                    max_latest = max_latest.max(result.get("Latest").map(|s| s.len()).unwrap_or(0));
-                }
-            }
-
-            // Function to calculate visible string length (excluding ANSI codes)
-            fn visible_length(s: &str) -> usize {
-                let ansi_regex = regex::Regex::new(r"\x1B\[[0-9;]*m").unwrap();
-                ansi_regex.replace_all(s, "").len()
-            }
+            let max_binary = 15;
+            let max_status = 10;
+            let max_version = 15;
+            let max_latest = 15;
 
             // Print header
             if latest {
                 println!(
-                    "{:<width1$} {:<width2$} {:<width3$} {:<width4$}",
-                    "Binary",
-                    "Status",
-                    "Version",
-                    "Latest",
-                    width1 = max_binary,
-                    width2 = max_status,
-                    width3 = max_version,
-                    width4 = max_latest
+                    "{:<binary$}{:<status$}{:<version$}{:<latest$}",
+                    "BINARY",
+                    "STATUS",
+                    "VERSION",
+                    "LATEST",
+                    binary = max_binary,
+                    status = max_status,
+                    version = max_version,
+                    latest = max_latest
                 );
             } else {
                 println!(
-                    "{:<width1$} {:<width2$} {:<width3$}",
-                    "Binary",
-                    "Status",
-                    "Version",
+                    "{:<width1$}{:<width2$}{:<width3$}",
+                    "BINARY",
+                    "STATUS",
+                    "VERSION",
                     width1 = max_binary,
                     width2 = max_status,
                     width3 = max_version
@@ -308,20 +293,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Print rows
             for result in results {
                 let status = result["Status"].as_str();
-                let status_display = if status.contains("Found") {
-                    format!("\x1b[32m{}\x1b[0m", status) // Green color
-                } else {
-                    format!("\x1b[31m{}\x1b[0m", status) // Red color
-                };
-                // Calculate padding for status column based on visible length
-                let visible_status_len = visible_length(&status_display);
-                let status_padding = max_status.saturating_sub(visible_status_len);
-
                 if latest {
                     println!(
                         "{:<width1$}{:<width2$}{:<width3$}{:<width4$}",
                         result["Binary"].as_str(),
-                        format!("{}{}", status_display, " ".repeat(status_padding)),
+                        format!("{}", status),
                         result["Version"].as_str(),
                         result.get("Latest").map(|s| s.as_str()).unwrap_or("-"),
                         width1 = max_binary,
@@ -333,7 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!(
                         "{:<width1$}{:<width2$}{:<width3$}",
                         result["Binary"].as_str(),
-                        format!("{}{}", status_display, " ".repeat(status_padding)),
+                        format!("{}", status),
                         result["Version"].as_str(),
                         width1 = max_binary,
                         width2 = max_status,
