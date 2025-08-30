@@ -70,23 +70,141 @@ fn new_bin_manager() -> Result<BinManager, Box<dyn std::error::Error>> {
 }
 
 fn load_config() -> Result<HashMap<String, [String; 3]>, Box<dyn std::error::Error>> {
+    let mut data = HashMap::new();
+
+    // Populate with internal default data
+    data.insert(
+        "nu".to_string(),
+        [
+            "nushell/nushell".to_string(),
+            "nu".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "uv".to_string(),
+        [
+            "astral-sh/uv".to_string(),
+            "uv".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "zoxide".to_string(),
+        [
+            "ajeetdsouza/zoxide".to_string(),
+            "zoxide".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "jj".to_string(),
+        [
+            "jj-vcs/jj".to_string(),
+            "jj".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "fzf".to_string(),
+        [
+            "junegunn/fzf".to_string(),
+            "fzf".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "gh".to_string(),
+        [
+            "cli/cli".to_string(),
+            "gh".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "yazi".to_string(),
+        [
+            "sxyazi/yazi".to_string(),
+            "yazi".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "micro".to_string(),
+        [
+            "zyedidia/micro".to_string(),
+            "micro".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "lazygit".to_string(),
+        [
+            "jesseduffield/lazygit".to_string(),
+            "lazygit".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "eza".to_string(),
+        [
+            "eza-community/eza".to_string(),
+            "eza".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "bat".to_string(),
+        [
+            "sharkdp/bat".to_string(),
+            "bat".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "rclone".to_string(),
+        [
+            "rclone/rclone".to_string(),
+            "rclone".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "gix".to_string(),
+        [
+            "GitoxideLabs/gitoxide".to_string(),
+            "gix".to_string(),
+            "--version".to_string(),
+        ],
+    );
+    data.insert(
+        "kopia".to_string(),
+        [
+            "kopia/kopia".to_string(),
+            "kopia".to_string(),
+            "--version".to_string(),
+        ],
+    );
+
+    // Attempt to load from TOML file and add/override
     let config_dir = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| {
         let home = env::var("HOME").expect("HOME environment variable not set");
         format!("{}/.config", home)
     });
     let toml_path = format!("{}/bina/binaries.toml", config_dir);
-    let toml_str = fs::read_to_string(&toml_path)
-        .map_err(|_| format!("Failed to read binaries.toml from {}", toml_path))?;
-    let config: Config = toml::from_str(&toml_str)
-        .map_err(|_| format!("Failed to parse binaries.toml from {}", toml_path))?;
 
-    let mut data = HashMap::new();
-    for binary in config.binaries {
-        data.insert(
-            binary.name.clone(),
-            [binary.repo, binary.exe, binary.version_arg],
-        );
-    }
+    if let Ok(toml_str) = fs::read_to_string(&toml_path) {
+        let config: Config = toml::from_str(&toml_str)
+            .map_err(|_| format!("Failed to parse binaries.toml from {}", toml_path))?;
+
+        for binary in config.binaries {
+            data.insert(
+                binary.name.clone(),
+                [binary.repo, binary.exe, binary.version_arg],
+            );
+        }
+    } // If file doesn't exist or can't be read/parsed, silently use internal data only
+
     Ok(data)
 }
 
