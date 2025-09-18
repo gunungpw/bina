@@ -14,7 +14,7 @@ use ubi::UbiBuilder;
 #[command(
     name = "bina",
     about = "Manages binary installations in XDG_BIN_HOME",
-    version = "0.1.0"
+    version = "0.2.0"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -36,6 +36,8 @@ enum Commands {
     },
     /// Downloads all missing binaries
     GetMissing,
+    /// Links .config directory to ~/.local/dotfiles
+    LinkConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -182,6 +184,42 @@ fn ensure_bin_directory(xdg_bin_home: &str) -> Result<(), Box<dyn std::error::Er
         println!("Creating directory {}...", xdg_bin_home);
         fs::create_dir_all(path)?;
     }
+    Ok(())
+}
+
+fn link_config_directory() -> Result<(), Box<dyn std::error::Error>> {
+    let home = env::var("HOME").map_err(|_| "HOME environment variable not set")?;
+    let config_dir = env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| format!("{}/.config", home));
+    let dotfiles_dir = format!("{}/.local/dotfiles", home);
+
+    // Ensure the dotfiles directory exists
+    let dotfiles_path = Path::new(&dotfiles_dir);
+    if !dotfiles_path.exists() {
+        println!("Creating dotfiles directory {}...", dotfiles_dir);
+        fs::create_dir_all(dotfiles_path)?;
+    }
+
+    // Check if .config exists
+    let config_path = Path::new(&config_dir);
+    if !config_path.exists() {
+        println!("Creating .config directory {}...", config_dir);
+        fs::create_dir_all(config_path)?;
+    }
+
+    // Remove existing .config if it's a symlink
+    if config_path.is_symlink() {
+        println!("Removing existing .config symlink...");
+        fs::remove_file(&config_dir)?;
+    }
+
+    // Create symbolic link
+    println!("Creating symbolic link from {} to {}...", config_dir, dotfiles_dir);
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&dotfiles_dir, &config_dir)?;
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(&dotfiles_dir, &config_dir)?;
+
+    println!("Successfully linked .config to ~/.local/dotfiles");
     Ok(())
 }
 
@@ -378,6 +416,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !result.is_empty() {
                 println!("{}", result);
             }
+        }
+        Some(Commands::LinkConfig) => {
+            link_config_directory()?;
         }
         None => {
             Cli::parse_from(&["bina", "--help"]);
