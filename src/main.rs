@@ -59,8 +59,7 @@ struct BinManager {
 
 fn new_bin_manager() -> Result<BinManager, Box<dyn std::error::Error>> {
     let data = load_config()?;
-    let xdg_bin_home =
-        env::var("XDG_BIN_HOME").map_err(|_| "XDG_BIN_HOME environment variable not set")?;
+    let xdg_bin_home = env::var("XDG_BIN_HOME").map_err(|_| "XDG_BIN_HOME environment variable not set")?;
     let regex = Regex::new(r"(\d+\.\d+\.\d+)").map_err(|_| "Invalid regex")?;
     Ok(BinManager {
         data,
@@ -75,19 +74,11 @@ fn load_config() -> Result<HashMap<String, [String; 3]>, Box<dyn std::error::Err
     // Populate with internal default data
     data.insert(
         "nu".to_string(),
-        [
-            "nushell/nushell".to_string(),
-            "nu".to_string(),
-            "--version".to_string(),
-        ],
+        ["nushell/nushell".to_string(), "nu".to_string(), "--version".to_string()],
     );
     data.insert(
         "uv".to_string(),
-        [
-            "astral-sh/uv".to_string(),
-            "uv".to_string(),
-            "--version".to_string(),
-        ],
+        ["astral-sh/uv".to_string(), "uv".to_string(), "--version".to_string()],
     );
     data.insert(
         "zoxide".to_string(),
@@ -99,35 +90,19 @@ fn load_config() -> Result<HashMap<String, [String; 3]>, Box<dyn std::error::Err
     );
     data.insert(
         "jj".to_string(),
-        [
-            "jj-vcs/jj".to_string(),
-            "jj".to_string(),
-            "--version".to_string(),
-        ],
+        ["jj-vcs/jj".to_string(), "jj".to_string(), "--version".to_string()],
     );
     data.insert(
         "fzf".to_string(),
-        [
-            "junegunn/fzf".to_string(),
-            "fzf".to_string(),
-            "--version".to_string(),
-        ],
+        ["junegunn/fzf".to_string(), "fzf".to_string(), "--version".to_string()],
     );
     data.insert(
         "gh".to_string(),
-        [
-            "cli/cli".to_string(),
-            "gh".to_string(),
-            "--version".to_string(),
-        ],
+        ["cli/cli".to_string(), "gh".to_string(), "--version".to_string()],
     );
     data.insert(
         "yazi".to_string(),
-        [
-            "sxyazi/yazi".to_string(),
-            "yazi".to_string(),
-            "--version".to_string(),
-        ],
+        ["sxyazi/yazi".to_string(), "yazi".to_string(), "--version".to_string()],
     );
     data.insert(
         "micro".to_string(),
@@ -155,11 +130,7 @@ fn load_config() -> Result<HashMap<String, [String; 3]>, Box<dyn std::error::Err
     );
     data.insert(
         "bat".to_string(),
-        [
-            "sharkdp/bat".to_string(),
-            "bat".to_string(),
-            "--version".to_string(),
-        ],
+        ["sharkdp/bat".to_string(), "bat".to_string(), "--version".to_string()],
     );
     data.insert(
         "rclone".to_string(),
@@ -179,11 +150,7 @@ fn load_config() -> Result<HashMap<String, [String; 3]>, Box<dyn std::error::Err
     );
     data.insert(
         "kopia".to_string(),
-        [
-            "kopia/kopia".to_string(),
-            "kopia".to_string(),
-            "--version".to_string(),
-        ],
+        ["kopia/kopia".to_string(), "kopia".to_string(), "--version".to_string()],
     );
 
     // Attempt to load from TOML file and add/override
@@ -194,14 +161,11 @@ fn load_config() -> Result<HashMap<String, [String; 3]>, Box<dyn std::error::Err
     let toml_path = format!("{}/bina/binaries.toml", config_dir);
 
     if let Ok(toml_str) = fs::read_to_string(&toml_path) {
-        let config: Config = toml::from_str(&toml_str)
-            .map_err(|_| format!("Failed to parse binaries.toml from {}", toml_path))?;
+        let config: Config =
+            toml::from_str(&toml_str).map_err(|_| format!("Failed to parse binaries.toml from {}", toml_path))?;
 
         for binary in config.binaries {
-            data.insert(
-                binary.name.clone(),
-                [binary.repo, binary.exe, binary.version_arg],
-            );
+            data.insert(binary.name.clone(), [binary.repo, binary.exe, binary.version_arg]);
         }
     } // If file doesn't exist or can't be read/parsed, silently use internal data only
 
@@ -243,10 +207,7 @@ async fn check_latest_release(repo: &str) -> String {
     }
 }
 
-async fn get_binary(
-    bin_name: &str,
-    manager: &BinManager,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn get_binary(bin_name: &str, manager: &BinManager) -> Result<(), Box<dyn std::error::Error>> {
     ensure_bin_directory(&manager.xdg_bin_home)?;
     let bin_data = manager
         .data
@@ -270,9 +231,7 @@ async fn check_binaries(manager: &BinManager, check_latest: bool) -> Vec<HashMap
 
     let binaries: Vec<String> = fs::read_dir(&manager.xdg_bin_home)
         .expect("Failed to read XDG_BIN_HOME")
-        .filter_map(|entry: Result<DirEntry, _>| {
-            entry.ok().and_then(|e| e.file_name().into_string().ok())
-        })
+        .filter_map(|entry: Result<DirEntry, _>| entry.ok().and_then(|e| e.file_name().into_string().ok()))
         .collect();
 
     let mut results = vec![];
@@ -326,9 +285,7 @@ async fn get_missing_binaries(manager: &BinManager) -> Result<String, Box<dyn st
     ensure_bin_directory(&manager.xdg_bin_home)?;
     let binaries: Vec<String> = fs::read_dir(&manager.xdg_bin_home)
         .expect("Failed to read XDG_BIN_HOME")
-        .filter_map(|entry: Result<DirEntry, _>| {
-            entry.ok().and_then(|e| e.file_name().into_string().ok())
-        })
+        .filter_map(|entry: Result<DirEntry, _>| entry.ok().and_then(|e| e.file_name().into_string().ok()))
         .collect();
 
     let not_found: Vec<String> = manager
